@@ -32,7 +32,7 @@ import gradio as gr
 from typing import Dict
 
 
-BETA_FLAG = "computer-use-2024-10-22"
+BETA_FLAG = "computer-use-2025-01-24"
 
 
 class APIProvider(StrEnum):
@@ -43,7 +43,7 @@ class APIProvider(StrEnum):
 
 PROVIDER_TO_DEFAULT_MODEL_NAME: dict[APIProvider, str] = {
     APIProvider.ANTHROPIC: "claude-3-5-sonnet-20241022",
-    APIProvider.BEDROCK: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    APIProvider.BEDROCK: "arn:aws:bedrock:us-west-2:312677730269:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
     APIProvider.VERTEX: "claude-3-5-sonnet-v2@20241022",
 }
 
@@ -69,7 +69,21 @@ class AnthropicActor:
         selected_screen: int = 0,
         print_usage: bool = True,
     ):
-        self.model = model
+        # Map model names to actual model IDs based on provider
+        if provider == APIProvider.BEDROCK:
+            # Import the Bedrock model mapping from loop.py
+            from computer_use_demo.loop import BEDROCK_CLAUDE_MODELS
+            
+            if model in BEDROCK_CLAUDE_MODELS:
+                self.model = BEDROCK_CLAUDE_MODELS[model]
+            else:
+                # Fallback to the provided model ID if not in mapping
+                self.model = model
+                
+            print(f"Using Bedrock model: {self.model}")
+        else:
+            self.model = model
+            
         self.provider = provider
         self.system_prompt_suffix = system_prompt_suffix
         self.api_key = api_key
@@ -99,7 +113,7 @@ class AnthropicActor:
         elif provider == APIProvider.VERTEX:
             self.client = AnthropicVertex()
         elif provider == APIProvider.BEDROCK:
-            self.client = AnthropicBedrock()
+            self.client = AnthropicBedrock(aws_region="us-west-2")
         else:
             raise ValueError(f"Provider {provider} not supported")
 
@@ -121,7 +135,7 @@ class AnthropicActor:
             model=self.model,
             system=self.system,
             tools=self.tool_collection.to_params(),
-            betas=["computer-use-2024-10-22"],
+            betas=["computer-use-2025-01-24"],
         )
 
         self.api_response_callback(cast(APIResponse[BetaMessage], raw_response))

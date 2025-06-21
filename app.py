@@ -2,6 +2,9 @@
 FastAPI endpoints for Computer Use OOTB
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import platform
 import asyncio
 import base64
@@ -128,6 +131,8 @@ def setup_state(session_id: str = "default"):
             state["planner_api_key"] = state["openai_api_key"]
         elif state["planner_provider"] == "anthropic":
             state["planner_api_key"] = state["anthropic_api_key"]
+        elif state["planner_provider"] == "bedrock":
+            state["planner_api_key"] = ""  # Bedrock uses AWS credentials, not API keys
         elif state["planner_provider"] == "qwen":
             state["planner_api_key"] = state["qwen_api_key"]
         else:
@@ -135,7 +140,7 @@ def setup_state(session_id: str = "default"):
 
     logger.info(f"loaded initial api_key for {state['planner_provider']}: {state['planner_api_key']}")
 
-    if not state["planner_api_key"]:
+    if not state["planner_api_key"] and state["planner_provider"] not in ["bedrock", "vertex"]:
         logger.warning("Planner API key not found. Please set it in the environment or via API.")
 
     if "selected_screen" not in state:
@@ -329,6 +334,23 @@ def chat(request: ChatRequest):
             "content": [TextBlock(type="text", text=user_input)],
         })
 
+        # Convert provider strings to APIProvider enums
+        planner_provider = None
+        if state["planner_provider"]:
+            try:
+                planner_provider = APIProvider(state["planner_provider"])
+            except ValueError:
+                logger.error(f"Invalid planner provider: {state['planner_provider']}")
+                planner_provider = None
+        
+        actor_provider = None
+        if state["actor_provider"]:
+            try:
+                actor_provider = APIProvider(state["actor_provider"])
+            except ValueError:
+                logger.error(f"Invalid actor provider: {state['actor_provider']}")
+                actor_provider = None
+
         # Collect output messages
         output_messages = []
         output_callback = collect_output_messages(output_messages)
@@ -338,9 +360,9 @@ def chat(request: ChatRequest):
         for loop_msg in sampling_loop_sync(
             system_prompt_suffix=state["custom_system_prompt"],
             planner_model=state["planner_model"],
-            planner_provider=state["planner_provider"],
+            planner_provider=planner_provider,
             actor_model=state["actor_model"],
-            actor_provider=state["actor_provider"],
+            actor_provider=actor_provider,
             messages=state["messages"],
             output_callback=output_callback,
             tool_output_callback=partial(_tool_output_callback, tool_state=state["tools"]),
