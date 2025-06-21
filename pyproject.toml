@@ -1,0 +1,29 @@
+[project]
+name = "sahayak-ai"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "accelerate>=1.8.1",
+    "anthropic[bedrock,vertex]>=0.37.1",
+    "boto3>=1.28.57",
+    "dashscope>=1.23.5",
+    "fastapi>=0.104.0",
+    "google-auth>=2,<3",
+    "gradio>=5.18.0",
+    "huggingface-hub>=0.33.0",
+    "jsonschema==4.22.0",
+    "openai>=1.90.0",
+    "pre-commit==3.8.0",
+    "pyautogui==0.9.54",
+    "pytest==8.3.3",
+    "pytest-asyncio==0.23.6",
+    "qwen-vl-utils>=0.0.11",
+    "ruff>=0.12.0",
+    "screeninfo>=0.8.1",
+    "streamlit>=1.38.0",
+    "transformers>=4.52.4",
+    "uiautomation>=2.0.28",
+    "uvicorn[standard]>=0.24.0",
+]
