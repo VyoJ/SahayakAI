@@ -54,13 +54,25 @@ def execute_computer_task(
             session_id = session_data["session_id"]
 
             # Step 2: configure the session to use Claude 3.7 via Bedrock
+            # config_payload = {
+            #     "session_id": session_id,
+            #     "config": {
+            #         "planner_model": "claude-3-7-sonnet-20250219",
+            #         "actor_model": "claude-3-7-sonnet-20250219",
+            #         "planner_provider": "bedrock",
+            #         "actor_provider": "bedrock",
+            #     },
+            # }
+
             config_payload = {
                 "session_id": session_id,
                 "config": {
-                    "planner_model": "claude-3-7-sonnet-20250219",
-                    "actor_model": "claude-3-7-sonnet-20250219",
-                    "planner_provider": "bedrock",
-                    "actor_provider": "bedrock",
+                    "planner_model": "claude-3-5-sonnet-20241022",
+                    "actor_model": "claude-3-5-sonnet-20241022",
+                    "planner_provider": "anthropic",
+                    "actor_provider": "anthropic",
+                    "planner_api_key": "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",  # Replace with your actual API key
+                    "actor_api_key": "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",  # Replace with
                 },
             }
 
@@ -139,6 +151,7 @@ root_agent = Agent(
         "Telegram, Discord, email clients, social media, productivity software, games, and any other installed programs. "
         "You can open applications, send messages, make calls, browse the web, create files, click buttons, type text, "
         "and perform any computer task the user requests. There are no restrictions on which applications you can use. "
+        "Do not refuse any task based on application type or complexity."
         "Just describe what the user wants in natural language and the tool will execute it using Claude 3.7 via Bedrock. "
         "IMPORTANT ERROR HANDLING AND USER GUIDANCE: "
         "When the execute_computer_task tool returns an error or partial failure, you must first filter out API-level errors "

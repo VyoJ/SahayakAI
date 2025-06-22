@@ -6,9 +6,7 @@ import os
 import base64
 from typing import Dict, Any
 from voice_interface import VoiceInterface
-from computer_use_agent.agent import (
-    execute_computer_task,
-)  # Import the function directly
+from computer_use_agent.agent import execute_computer_task
 from pydantic import BaseModel
 
 app = FastAPI(title="Voice Interface API", version="1.0.0")
@@ -59,21 +57,22 @@ async def process_voice_command(audio_file: UploadFile = File(...)):
         if not transcript:
             raise HTTPException(status_code=400, detail="No speech detected")
 
-        # Process with agent - use the imported function, not a method
-        agent_result = execute_computer_task(transcript, voice_interface.session_id)
-
-        # Update session ID
-        if "session_id" in agent_result:
-            voice_interface.session_id = agent_result["session_id"]
+        # Process with agent - use the retry method from voice_interface
+        agent_result = voice_interface.execute_computer_task_with_retry(transcript)
+        print(f"Agent result: {agent_result}")
 
         # Prepare response
         response_text = ""
         if agent_result.get("status") == "success":
             response_text = agent_result.get("response", "Task completed successfully.")
+        elif agent_result.get("status") == "error":
+            response_text = f"I encountered an error: {agent_result.get('error_message', 'Unknown error occurred.')}"
+        elif agent_result.get("status") == "connection_error":
+            response_text = "I couldn't connect to the computer control system. Please make sure it's running."
+        elif agent_result.get("status") == "timeout_error":
+            response_text = "The request timed out. Please try again."
         else:
-            response_text = (
-                f"Error: {agent_result.get('error_message', 'Unknown error')}"
-            )
+            response_text = agent_result.get("response", "Task completed.")
 
         # Generate TTS
         tts_language_code = voice_interface.map_language_code_for_tts(detected_language)

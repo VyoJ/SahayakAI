@@ -102,7 +102,7 @@ class ComputerTool(BaseAnthropicTool):
     """
 
     name: Literal["computer"] = "computer"
-    api_type: Literal["computer_20250124"] = "computer_20250124"
+    api_type: Literal["computer_20241022"] = "computer_20241022"
     width: int
     height: int
     display_num: int | None

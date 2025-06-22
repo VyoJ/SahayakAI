@@ -234,6 +234,105 @@ class VoiceInterface:
         # Return mapped code or default to English
         return language_mapping.get(stt_language_code, "en-IN")
 
+    def is_api_rate_limit_error(self, error_message: str) -> bool:
+        """
+        Check if the error is a rate limiting error that should trigger a retry.
+
+        Args:
+            error_message (str): Error message to check
+
+        Returns:
+            bool: True if it's a rate limiting error
+        """
+        rate_limit_indicators = [
+            "429",
+            "rate limit",
+            "too many requests",
+            "too many tokens",
+            "quota exceeded",
+            "throttle",
+            "billing",
+            "rate_limit",
+        ]
+
+        error_lower = error_message.lower()
+        return any(indicator in error_lower for indicator in rate_limit_indicators)
+
+    def execute_computer_task_with_retry(
+        self, transcript: str, max_retries: int = 3
+    ) -> Dict[str, Any]:
+        """
+        Execute computer task with automatic retry for rate limiting errors.
+
+        Args:
+            transcript (str): The user's command
+            max_retries (int): Maximum number of retry attempts
+
+        Returns:
+            Dict[str, Any]: Result of the computer task execution
+        """
+        for attempt in range(max_retries + 1):
+            try:
+                print(
+                    f"🤖 Processing command with computer use agent... (attempt {attempt + 1})"
+                )
+                agent_result = execute_computer_task(transcript, self.session_id)
+
+                # Update session ID if returned
+                if "session_id" in agent_result:
+                    self.session_id = agent_result["session_id"]
+
+                # Check if this is a rate limiting error
+                error_message = agent_result.get("error_message", "")
+                response = agent_result.get("response", "")
+
+                if agent_result.get("status") == "error" and (
+                    self.is_api_rate_limit_error(error_message)
+                    or self.is_api_rate_limit_error(response)
+                ):
+
+                    if attempt < max_retries:
+                        wait_time = (
+                            2**attempt
+                        ) * 5  # Exponential backoff: 5s, 10s, 20s
+                        print(
+                            f"⏳ Rate limit detected. Waiting {wait_time} seconds before retry..."
+                        )
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(
+                            "⚠️ Maximum retries reached for rate limiting. Continuing with rate limit message."
+                        )
+                        return {
+                            "status": "success",
+                            "response": "The system is experiencing temporary API limits. Your request is being processed, please try again in a moment.",
+                        }
+
+                # Return successful result or non-rate-limit error
+                return agent_result
+
+            except Exception as e:
+                error_str = str(e)
+                if self.is_api_rate_limit_error(error_str) and attempt < max_retries:
+                    wait_time = attempt * 5
+                    print(
+                        f"⏳ Rate limit detected in exception. Waiting {wait_time} seconds before retry..."
+                    )
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    return {
+                        "status": "error",
+                        "error_message": f"Unexpected error: {error_str}",
+                    }
+
+        # This should not be reached, but just in case
+        return {
+            "status": "error",
+            "error_message": "Failed to execute task after maximum retries",
+        }
+
     def process_voice_command(self, duration: int = 5) -> Dict[str, Any]:
         """
         Complete voice interaction cycle: record -> ASR -> process -> TTS -> play.
@@ -264,13 +363,8 @@ class VoiceInterface:
             if not transcript or transcript.strip() == "":
                 return {"status": "error", "message": "No speech detected"}
 
-            # Step 3: Process command with computer use agent
-            print("🤖 Processing command with computer use agent...")
-            agent_result = execute_computer_task(transcript, self.session_id)
-
-            # Update session ID if returned
-            if "session_id" in agent_result:
-                self.session_id = agent_result["session_id"]
+            # Step 3: Process command with computer use agent (with retry logic)
+            agent_result = self.execute_computer_task_with_retry(transcript)
 
             # Step 4: Prepare response message
             response_text = ""

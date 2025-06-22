@@ -39,7 +39,7 @@ import gradio as gr
 from typing import Dict
 
 
-BETA_FLAG = "computer-use-2025-01-24"
+BETA_FLAG = "computer-use-2024-10-22"
 
 
 class APIProvider(StrEnum):
@@ -138,7 +138,7 @@ class AnthropicActor:
             model=self.model,
             system=self.system,
             tools=self.tool_collection.to_params(),
-            betas=["computer-use-2025-01-24"],
+            betas=["computer-use-2024-10-22"],
         )
 
         self.api_response_callback(cast(APIResponse[BetaMessage], raw_response))
