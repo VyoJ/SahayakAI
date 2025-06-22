@@ -1,6 +1,7 @@
 """
 Agentic sampling loop that calls the Anthropic API and local implementation of anthropic-defined computer use tools.
 """
+
 import asyncio
 import platform
 from collections.abc import Callable
@@ -24,7 +25,13 @@ from anthropic.types.beta import (
 from anthropic.types import TextBlock
 from anthropic.types.beta import BetaMessage, BetaTextBlock, BetaToolUseBlock
 
-from computer_use_demo.tools import BashTool, ComputerTool, EditTool, ToolCollection, ToolResult
+from computer_use_demo.tools import (
+    BashTool,
+    ComputerTool,
+    EditTool,
+    ToolCollection,
+    ToolResult,
+)
 
 from PIL import Image
 from io import BytesIO
@@ -43,7 +50,7 @@ class APIProvider(StrEnum):
 
 PROVIDER_TO_DEFAULT_MODEL_NAME: dict[APIProvider, str] = {
     APIProvider.ANTHROPIC: "claude-3-5-sonnet-20241022",
-    APIProvider.BEDROCK: "arn:aws:bedrock:us-west-2:312677730269:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+    APIProvider.BEDROCK: "arn:aws:bedrock:us-west-2:243706635424:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
     APIProvider.VERTEX: "claude-3-5-sonnet-v2@20241022",
 }
 
@@ -58,10 +65,10 @@ SYSTEM_PROMPT = f"""<SYSTEM_CAPABILITY>
 
 class AnthropicActor:
     def __init__(
-        self, 
-        model: str, 
-        provider: APIProvider, 
-        system_prompt_suffix: str, 
+        self,
+        model: str,
+        provider: APIProvider,
+        system_prompt_suffix: str,
         api_key: str,
         api_response_callback: Callable[[APIResponse[BetaMessage]], None],
         max_tokens: int = 4096,
@@ -73,17 +80,17 @@ class AnthropicActor:
         if provider == APIProvider.BEDROCK:
             # Import the Bedrock model mapping from loop.py
             from computer_use_demo.loop import BEDROCK_CLAUDE_MODELS
-            
+
             if model in BEDROCK_CLAUDE_MODELS:
                 self.model = BEDROCK_CLAUDE_MODELS[model]
             else:
                 # Fallback to the provided model ID if not in mapping
                 self.model = model
-                
+
             print(f"Using Bedrock model: {self.model}")
         else:
             self.model = model
-            
+
         self.provider = provider
         self.system_prompt_suffix = system_prompt_suffix
         self.api_key = api_key
@@ -91,17 +98,15 @@ class AnthropicActor:
         self.max_tokens = max_tokens
         self.only_n_most_recent_images = only_n_most_recent_images
         self.selected_screen = selected_screen
-        
+
         self.tool_collection = ToolCollection(
             ComputerTool(selected_screen=selected_screen),
             BashTool(),
             EditTool(),
         )
 
-        self.system = (
-            f"{SYSTEM_PROMPT}{' ' + system_prompt_suffix if system_prompt_suffix else ''}"
-        )
-        
+        self.system = f"{SYSTEM_PROMPT}{' ' + system_prompt_suffix if system_prompt_suffix else ''}"
+
         self.total_token_usage = 0
         self.total_cost = 0
         self.print_usage = print_usage
@@ -117,16 +122,14 @@ class AnthropicActor:
         else:
             raise ValueError(f"Provider {provider} not supported")
 
-    def __call__(
-        self, 
-        *,
-        messages: list[BetaMessageParam]
-    ):
+    def __call__(self, *, messages: list[BetaMessageParam]):
         """
         Generate a response given history messages.
         """
         if self.only_n_most_recent_images:
-            _maybe_filter_to_n_most_recent_images(messages, self.only_n_most_recent_images)
+            _maybe_filter_to_n_most_recent_images(
+                messages, self.only_n_most_recent_images
+            )
 
         # Call the API synchronously
         raw_response = self.client.beta.messages.with_raw_response.create(
@@ -143,12 +146,19 @@ class AnthropicActor:
         response = raw_response.parse()
         print(f"AnthropicActor response: {response}")
 
-        self.total_token_usage += response.usage.input_tokens + response.usage.output_tokens
-        self.total_cost += (response.usage.input_tokens * 3 / 1000000 + response.usage.output_tokens * 15 / 1000000)
-        
+        self.total_token_usage += (
+            response.usage.input_tokens + response.usage.output_tokens
+        )
+        self.total_cost += (
+            response.usage.input_tokens * 3 / 1000000
+            + response.usage.output_tokens * 15 / 1000000
+        )
+
         if self.print_usage:
-            print(f"Claude total token usage so far: {self.total_token_usage}, total cost so far: $USD{self.total_cost}")
-        
+            print(
+                f"Claude total token usage so far: {self.total_token_usage}, total cost so far: $USD{self.total_cost}"
+            )
+
         return response
 
 
@@ -199,8 +209,7 @@ def _maybe_filter_to_n_most_recent_images(
                         continue
                 new_content.append(content)
             tool_result["content"] = new_content
-            
-            
+
 
 if __name__ == "__main__":
     pass
@@ -219,5 +228,5 @@ if __name__ == "__main__":
     #         {"role": "user", "content": "click on (199, 199)."}
     #     ],
     # )
-    
+
     # print(f"AnthropicActor response: {response.parse().usage.input_tokens+response.parse().usage.output_tokens}")
