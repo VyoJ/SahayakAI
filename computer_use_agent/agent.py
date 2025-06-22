@@ -1,6 +1,4 @@
 import requests
-import json
-import time
 from typing import Dict, Any, Optional
 from google.adk.agents import Agent
 
@@ -36,20 +34,22 @@ def execute_computer_task(task_description: str, session_id: Optional[str] = Non
         - "Take a screenshot, then open a web browser and search for news"
     """
     try:
-        # Create or get session
+        # --------------------------------------------------------------
+        # Create or fetch a session if one wasn't passed in
+        # --------------------------------------------------------------
         if not session_id:
-            # Create new session with Claude 3.7 configuration
+            # Step 1: create a new session
             session_response = requests.post(f"{COMPUTER_USE_API_URL}/session/create")
             if session_response.status_code != 200:
                 return {
                     "status": "error",
                     "error_message": f"Failed to create session: {session_response.text}"
                 }
-            
+
             session_data = session_response.json()
             session_id = session_data["session_id"]
-            
-            # Configure session for Claude 3.7 via Bedrock
+
+            # Step 2: configure the session to use Claude 3.7 via Bedrock
             config_payload = {
                 "session_id": session_id,
                 "config": {
@@ -57,27 +57,19 @@ def execute_computer_task(task_description: str, session_id: Optional[str] = Non
                     "actor_model": "claude-3-7-sonnet-20250219",
                     "planner_provider": "bedrock",
                     "actor_provider": "bedrock",
-                    "custom_system_prompt": (
-                        "You are a helpful AI assistant that can interact with ANY computer interface and application. "
-                        "You have full access to control this computer and can open, interact with, and use ANY application "
-                        "installed on the system, including but not limited to: WhatsApp, Telegram, Discord, Slack, email clients, "
-                        "web browsers, social media apps, productivity software, games, and any other programs. "
-                        "You can send messages, make calls, browse the web, create files, and perform any task the user requests. "
-                        "There are no restrictions on which applications you can access - treat all installed software as available tools. "
-                        "Execute tasks carefully and provide clear feedback about what you're doing. "
-                        "If an application isn't immediately visible, use system search or application launchers to find and open it."
-                    )
+                   
                 }
             }
-            
+
             config_response = requests.post(f"{COMPUTER_USE_API_URL}/session/config", json=config_payload)
             if config_response.status_code != 200:
                 return {
                     "status": "error",
                     "error_message": f"Failed to configure session: {config_response.text}"
                 }
-        
-        # Execute the task
+        # ------------------------------------------------------------------
+        # Execute the task description (expected to be in English) with the Computer-Use API
+        # ------------------------------------------------------------------
         chat_payload = {
             "message": task_description,
             "session_id": session_id
@@ -93,13 +85,19 @@ def execute_computer_task(task_description: str, session_id: Optional[str] = Non
         
         response_data = chat_response.json()
         
+        # ------------------------------------------------------------------
+        # 3) Prepare a short response message in the SAME language the user used
+        # ------------------------------------------------------------------
+        success_en = "Task executed successfully"
+        error_en = "Task execution failed"
+
         if response_data["status"] == "success":
             return {
                 "status": "success",
                 "session_id": session_id,
                 "status_code": chat_response.status_code,
                 "task_completed": True,
-                "message": "Task executed successfully"
+                "message": success_en
             }
         else:
             return {
@@ -107,7 +105,7 @@ def execute_computer_task(task_description: str, session_id: Optional[str] = Non
                 "session_id": session_id,
                 "status_code": chat_response.status_code,
                 "task_completed": False,
-                "message": "Task execution failed"
+                "message": error_en
             }
             
     except requests.exceptions.ConnectionError:
@@ -139,7 +137,12 @@ root_agent = Agent(
         "and perform any computer task the user requests. There are no restrictions on which applications you can use. "
         "Just describe what the user wants in natural language and the tool will execute it using Claude 3.7 via Bedrock. "
         "Always provide clear feedback about what you're doing and whether tasks were completed successfully. "
-        "If you encounter errors, explain them clearly and suggest potential solutions."
+        "If you encounter errors, explain them clearly and suggest potential solutions. "
+        "IMPORTANT: The user may provide instructions in ANY Indic language. You MUST 1) translate the user's request "
+        "into English before calling the execute_computer_task tool, 2) call the tool with the English version ONLY, "
+        "and 3) after you receive the tool response, translate your final answer back into the SAME language that the "
+        "user used. Preserve the user's language for the final assistant response. You are multilingual and can handle "
+        "translation internally — no external translation APIs are required."
     ),
     tools=[execute_computer_task],
 ) 
