@@ -10,6 +10,7 @@ dependencies = [
     "boto3>=1.28.57",
     "dashscope>=1.23.5",
     "fastapi>=0.104.0",
+    "google-adk>=1.4.2",
     "google-auth>=2,<3",
     "gradio>=5.18.0",
     "huggingface-hub>=0.33.0",
