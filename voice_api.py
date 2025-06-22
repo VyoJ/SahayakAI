@@ -61,18 +61,9 @@ async def process_voice_command(audio_file: UploadFile = File(...)):
         agent_result = voice_interface.execute_computer_task_with_retry(transcript)
         print(f"Agent result: {agent_result}")
 
-        # Prepare response
-        response_text = ""
-        if agent_result.get("status") == "success":
-            response_text = agent_result.get("response", "Task completed successfully.")
-        elif agent_result.get("status") == "error":
-            response_text = f"I encountered an error: {agent_result.get('error_message', 'Unknown error occurred.')}"
-        elif agent_result.get("status") == "connection_error":
-            response_text = "I couldn't connect to the computer control system. Please make sure it's running."
-        elif agent_result.get("status") == "timeout_error":
-            response_text = "The request timed out. Please try again."
-        else:
-            response_text = agent_result.get("response", "Task completed.")
+        # Extract clean text response using the new method
+        response_text = voice_interface.extract_text_only_response(agent_result)
+        print(f"Response text: {response_text}")
 
         # Generate TTS
         tts_language_code = voice_interface.map_language_code_for_tts(detected_language)

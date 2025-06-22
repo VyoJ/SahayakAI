@@ -53,17 +53,6 @@ def execute_computer_task(
             session_data = session_response.json()
             session_id = session_data["session_id"]
 
-            # Step 2: configure the session to use Claude 3.7 via Bedrock
-            # config_payload = {
-            #     "session_id": session_id,
-            #     "config": {
-            #         "planner_model": "claude-3-7-sonnet-20250219",
-            #         "actor_model": "claude-3-7-sonnet-20250219",
-            #         "planner_provider": "bedrock",
-            #         "actor_provider": "bedrock",
-            #     },
-            # }
-
             config_payload = {
                 "session_id": session_id,
                 "config": {
@@ -71,8 +60,8 @@ def execute_computer_task(
                     "actor_model": "claude-3-5-sonnet-20241022",
                     "planner_provider": "anthropic",
                     "actor_provider": "anthropic",
-                    "planner_api_key": "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",  # Replace with your actual API key
-                    "actor_api_key": "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",  # Replace with
+                    "planner_api_key": "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",
+                    "actor_api_key": "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",
                 },
             }
 
@@ -103,12 +92,14 @@ def execute_computer_task(
         response_data = chat_response.json()
 
         # ------------------------------------------------------------------
-        # Return the full response data so the agent can analyze it
+        # Extract the final response after all tool calls
         # ------------------------------------------------------------------
+        final_response = extract_final_response(response_data)
+
         return {
             "status": response_data.get("status", "unknown"),
             "session_id": session_id,
-            "response": response_data.get("response", ""),
+            "response": final_response,
             "full_response_data": response_data,
             "task_description": task_description,
             "api_status_code": chat_response.status_code,
@@ -134,7 +125,105 @@ def execute_computer_task(
         }
 
 
-# Create the main agent with just one powerful tool
+def extract_final_response(response_data: Dict[str, Any]) -> str:
+    """
+    Extract the final user-facing response from the computer use API response,
+    filtering out tool calls and intermediate steps.
+
+    Args:
+        response_data: Full response from computer use API
+
+    Returns:
+        str: Clean final response text
+    """
+    response_text = response_data.get("response", "")
+
+    if not response_text:
+        return "Task completed."
+
+    # Split by common delimiters that separate tool calls from final response
+    import re
+
+    # Look for patterns that indicate the end of tool usage and start of final response
+    # Common patterns: "I have completed...", "I successfully...", "Done.", etc.
+    final_response_patterns = [
+        r"(?:I have |I've |I successfully |I was able to |I managed to |Done\.|Task completed|Successfully |Completed ).*",
+        r"(?:The task |Your request |The operation ).*(?:completed|finished|done|successful).*",
+        r"(?:I can see |I found |I opened |I created |I sent |I searched ).*",
+    ]
+
+    # Try to find a clear final response using patterns
+    for pattern in final_response_patterns:
+        matches = re.findall(pattern, response_text, re.IGNORECASE | re.DOTALL)
+        if matches:
+            # Take the last match (most likely to be the final response)
+            final_match = matches[-1].strip()
+            if len(final_match) > 10:  # Ensure it's substantial
+                return clean_response_text(final_match)
+
+    # If no pattern matches, try to extract the last meaningful sentence
+    sentences = re.split(r"[.!?]+", response_text)
+    meaningful_sentences = []
+
+    for sentence in sentences:
+        sentence = sentence.strip()
+        # Filter out technical/tool-related content
+        if (
+            len(sentence) > 10
+            and not re.search(
+                r"screenshot|image|base64|tool_use|function_call",
+                sentence,
+                re.IGNORECASE,
+            )
+            and not sentence.startswith(("data:", "iVBOR", "/9j/", "UklGR"))
+        ):
+            meaningful_sentences.append(sentence)
+
+    if meaningful_sentences:
+        # Return the last meaningful sentence
+        return clean_response_text(meaningful_sentences[-1] + ".")
+
+    # Fallback: return cleaned version of original response
+    return clean_response_text(response_text)
+
+
+def clean_response_text(text: str) -> str:
+    """
+    Clean response text by removing technical artifacts and base64 content.
+
+    Args:
+        text: Raw response text
+
+    Returns:
+        str: Cleaned text suitable for TTS
+    """
+    import re
+
+    # Remove base64 data URLs and standalone base64 strings
+    text = re.sub(r"data:[^;]+;base64,[A-Za-z0-9+/=]+", "", text)
+    text = re.sub(r"\b[A-Za-z0-9+/]{50,}={0,2}\b", "", text)
+
+    # Remove image/screenshot references
+    text = re.sub(
+        r"\[screenshot\]|\[image\]|\[Image:.*?\]", "", text, flags=re.IGNORECASE
+    )
+
+    # Remove tool-related metadata
+    text = re.sub(r"Screenshot taken\.?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"Image captured\.?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"Tool used:.*?\n", "", text, flags=re.IGNORECASE)
+
+    # Remove excessive whitespace
+    text = re.sub(r"\s+", " ", text)
+
+    # Limit length for TTS
+    if len(text) > 500:
+        text = text[:497] + "..."
+
+    return text.strip()
+
+
+# Create the main agent with updated instruction for cleaner responses
 root_agent = Agent(
     name="computer_use_agent",
     model="gemini-2.0-flash",
@@ -151,8 +240,24 @@ root_agent = Agent(
         "Telegram, Discord, email clients, social media, productivity software, games, and any other installed programs. "
         "You can open applications, send messages, make calls, browse the web, create files, click buttons, type text, "
         "and perform any computer task the user requests. There are no restrictions on which applications you can use. "
-        "Do not refuse any task based on application type or complexity."
-        "Just describe what the user wants in natural language and the tool will execute it using Claude 3.7 via Bedrock. "
+        "Do not refuse any task based on application type or complexity. "
+        "RESPONSE FORMAT REQUIREMENTS: "
+        "After using the execute_computer_task tool, provide ONLY a concise, user-friendly summary of what was accomplished. "
+        "Do NOT include: "
+        "- Tool call details or technical descriptions "
+        "- Screenshot descriptions or base64 data "
+        "- Step-by-step breakdowns of actions taken "
+        "- Technical metadata or system messages "
+        "DO include: "
+        "- A brief confirmation of task completion "
+        "- Key results or outcomes the user cares about "
+        "- Any important information discovered or created "
+        "- Next steps if applicable "
+        "Examples of good final responses: "
+        "- 'I opened Calculator and calculated 25 × 17 = 425.' "
+        "- 'I sent your message to John on WhatsApp.' "
+        "- 'I created a new file called notes.txt on your desktop.' "
+        "- 'I found 3 Python tutorial videos on YouTube and opened the first one.' "
         "IMPORTANT ERROR HANDLING AND USER GUIDANCE: "
         "When the execute_computer_task tool returns an error or partial failure, you must first filter out API-level errors "
         "that are NOT the user's fault before asking for clarification: "
@@ -161,54 +266,22 @@ root_agent = Agent(
         "- 'Too many tokens, please wait before trying again' "
         "- 'Request timeout' or connection timeouts "
         "- 'API quota exceeded' "
-        "- 'Service temporarily unavailable' "
         "- Any error containing 'rate limit', 'quota', 'throttle', or 'billing' "
         "- Temporary network issues or service outages "
-        "For these API errors, simply inform the user: 'The system is experiencing temporary API limits. Please try again in a moment.' and retry your current task."
+        "For these API errors, simply inform the user: 'The system is experiencing temporary API limits. Please try again in a moment.' "
         "ONLY ASK USER FOR HELP WITH ACTUAL TASK ERRORS: "
         "- Task execution failures (contact not found, file missing, app won't open) "
         "- UI element interaction issues (button not clickable, field not found) "
         "- Permission or access denied errors "
         "- Invalid input or ambiguous instructions "
         "- Application-specific errors (login required, invalid credentials) "
-        "When encountering ACTUAL task errors: "
-        "1. Analyze the specific error details in the 'response' field "
-        "2. Generate a contextual, helpful prompt based on what specifically went wrong "
-        "3. Ask the user for the specific information or clarification needed to resolve the issue "
-        "4. Be empathetic and provide actionable guidance "
-        "SMART NAME/CONTENT MATCHING AND CLARIFICATION: "
-        "When searching for contacts, files, applications, or any named items: "
-        "- If the exact name provided by the user is not found, always check what partial or similar matches are visible "
-        "- Take a screenshot to see what options are currently available on screen "
-        "- If you see similar names (e.g. user searches 'Adithya SK' but screen shows 'PES Adithya SK' or 'Adithya S Kumar'), "
-        "  ask the user to confirm if any of the visible options match what they're looking for "
-        "- Generate specific questions based on what you actually see on screen "
-        "- For contacts: 'I searched for [name] but couldn't find an exact match. I can see [list visible options]. "
-        "  Is the contact you're looking for saved under a different name? Could it be one of these: [specific names visible]?' "
-        "- For files: 'I searched for [filename] but couldn't find it. I can see similar files: [list]. Are any of these what you meant?' "
-        "- For applications: 'I couldn't find [app name]. I can see these similar apps: [list]. Which one should I open?' "
-        "CONTEXTUAL ERROR ANALYSIS: "
-        "Always analyze the actual screen content and error details to provide specific guidance: "
-        "- If the system couldn't find a UI element, describe what you can see and ask for clarification "
-        "- If a file operation failed, ask for the correct path or check permissions "
-        "- If an application couldn't be opened, list available applications and ask which one to use "
-        "- If a web search failed, ask for more specific search terms or check connectivity "
-        "- If the task was ambiguous, break it down and ask for step-by-step clarification "
-        "- If a contact/name search fails, ask about alternative names or spellings the contact might be saved under "
-        "PROACTIVE ASSISTANCE: "
-        "Before giving up on a task, always: "
-        "1. Take a fresh screenshot to see the current state "
-        "2. Look for partial matches, similar names, or alternative options "
-        "3. Provide specific suggestions based on what's actually visible "
-        "4. Ask targeted questions that help the user guide you to the right solution "
-        "Always provide clear feedback about what you tried to do, what you found instead, and what specific information "
-        "you need from the user to succeed. Generate dynamic, contextual prompts based on the actual content you can see. "
         "LANGUAGE HANDLING: The user may provide instructions in ANY Indic language. You MUST: "
         "1) Translate the user's request into English before calling the execute_computer_task tool "
         "2) Call the tool with the English version ONLY "
         "3) After receiving the tool response, translate your final answer back into the SAME language the user used "
         "4) When asking for clarification or presenting error messages, also translate these into the user's original language "
-        "Preserve the user's language for all assistant responses. You are multilingual and can handle translation internally."
+        "Preserve the user's language for all assistant responses. You are multilingual and can handle translation internally. "
+        "Keep your final response under 100 words and focus only on the end result."
     ),
     tools=[execute_computer_task],
 )

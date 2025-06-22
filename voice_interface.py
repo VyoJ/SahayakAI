@@ -143,7 +143,7 @@ class VoiceInterface:
                 "api-subscription-key": self.api_key,
                 "Content-Type": "application/json",
             }
-
+            print(f"Received text for TTS: {text}")
             payload = {
                 "inputs": [text],
                 "target_language_code": language_code,
@@ -333,6 +333,85 @@ class VoiceInterface:
             "error_message": "Failed to execute task after maximum retries",
         }
 
+    def clean_response_text(self, response_text: str) -> str:
+        """
+        Clean response text by removing base64 content and other unwanted elements.
+
+        Args:
+            response_text (str): Raw response text from the agent
+
+        Returns:
+            str: Cleaned text suitable for TTS
+        """
+        import re
+
+        # Remove base64 data URLs (data:image/png;base64,...)
+        response_text = re.sub(
+            r"data:[^;]+;base64,[A-Za-z0-9+/=]+", "", response_text
+        )
+
+        # Remove standalone base64 strings (long sequences of base64 characters)
+        response_text = re.sub(r"\b[A-Za-z0-9+/]{50,}={0,2}\b", "", response_text)
+
+        # Remove image/screenshot references
+        response_text = re.sub(
+            r"\[screenshot\]|\[image\]|\[Image:.*?\]",
+            "",
+            response_text,
+            flags=re.IGNORECASE,
+        )
+
+        # Remove excessive whitespace and newlines
+        response_text = re.sub(r"\s+", " ", response_text)
+
+        # Remove common computer use metadata
+        response_text = re.sub(
+            r"Screenshot taken\.?\s*", "", response_text, flags=re.IGNORECASE
+        )
+        response_text = re.sub(
+            r"Image captured\.?\s*", "", response_text, flags=re.IGNORECASE
+        )
+
+        print(f"🔍 Cleaned response text: {response_text[:500]}...")
+        return response_text.strip()[:490]
+
+    def extract_text_only_response(self, agent_result: Dict[str, Any]) -> str:
+        """
+        Extract only the text response from agent result, excluding base64 and metadata.
+
+        Args:
+            agent_result (Dict[str, Any]): Full agent response
+
+        Returns:
+            str: Clean text response for TTS
+        """
+        response_text = ""
+
+        if agent_result.get("status") == "success":
+            raw_response = agent_result.get("response", "Task completed successfully.")
+            response_text = self.clean_response_text(raw_response)
+
+            # If response is empty after cleaning, provide a fallback
+            if not response_text or len(response_text.strip()) < 5:
+                response_text = "Task completed successfully."
+
+        elif agent_result.get("status") == "error":
+            error_msg = agent_result.get("error_message", "Unknown error occurred.")
+            response_text = f"I encountered an error: {self.clean_response_text(error_msg)}"
+        elif agent_result.get("status") == "connection_error":
+            response_text = "I couldn't connect to the computer control system. Please make sure it's running."
+        elif agent_result.get("status") == "timeout_error":
+            response_text = "The request timed out. Please try again."
+        else:
+            raw_response = agent_result.get("response", "Task completed.")
+            response_text = self.clean_response_text(raw_response)
+
+            # Fallback if response is empty after cleaning
+            if not response_text or len(response_text.strip()) < 5:
+                response_text = "Task completed."
+
+        return response_text
+
     def process_voice_command(self, duration: int = 5) -> Dict[str, Any]:
         """
         Complete voice interaction cycle: record -> ASR -> process -> TTS -> play.
@@ -366,20 +445,8 @@ class VoiceInterface:
             # Step 3: Process command with computer use agent (with retry logic)
             agent_result = self.execute_computer_task_with_retry(transcript)
 
-            # Step 4: Prepare response message
-            response_text = ""
-            if agent_result.get("status") == "success":
-                response_text = agent_result.get(
-                    "response", "Task completed successfully."
-                )
-            elif agent_result.get("status") == "error":
-                response_text = f"I encountered an error: {agent_result.get('error_message', 'Unknown error occurred.')}"
-            elif agent_result.get("status") == "connection_error":
-                response_text = "I couldn't connect to the computer control system. Please make sure it's running."
-            elif agent_result.get("status") == "timeout_error":
-                response_text = "The request timed out. Please try again."
-            else:
-                response_text = agent_result.get("response", "Task completed.")
+            # Step 4: Extract clean text response
+            response_text = self.extract_text_only_response(agent_result)
 
             print(f"🤖 Agent response: {response_text}")
 
