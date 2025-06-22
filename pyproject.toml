@@ -23,8 +23,12 @@ dependencies = [
     "qwen-vl-utils>=0.0.11",
     "ruff>=0.12.0",
     "screeninfo>=0.8.1",
-    "streamlit>=1.38.0",
     "transformers>=4.52.4",
     "uiautomation>=2.0.28",
     "uvicorn[standard]>=0.24.0",
+    "pyaudio>=0.2.14",
+    "pygame>=2.6.1",
+    "moviepy>=2.2.1",
+    "pydub>=0.25.1",
+    "ffmpeg-python>=0.2.0",
 ]

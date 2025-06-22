@@ -1,6 +1,7 @@
 """
 Agentic sampling loop that calls the Anthropic API and local implementation of computer use tools.
 """
+
 import time
 import json
 from collections.abc import Callable
@@ -10,11 +11,13 @@ from anthropic import APIResponse
 from anthropic.types.beta import BetaContentBlock, BetaMessage, BetaMessageParam
 from computer_use_demo.tools import ToolResult
 
-from computer_use_demo.tools.colorful_text import colorful_text_showui, colorful_text_vlm
+from computer_use_demo.tools.colorful_text import (
+    colorful_text_showui,
+    colorful_text_vlm,
+)
 from computer_use_demo.tools.screen_capture import get_screenshot
 from computer_use_demo.gui_agent.llm_utils.oai import encode_image
 from computer_use_demo.tools.logger import logger
-
 
 
 class APIProvider(StrEnum):
@@ -37,7 +40,7 @@ PROVIDER_TO_DEFAULT_MODEL_NAME: dict[APIProvider, str] = {
 
 # Available Claude models for Bedrock with fallback options
 BEDROCK_CLAUDE_MODELS = {
-    "claude-3-7-sonnet-20250219": "arn:aws:bedrock:us-west-2:312677730269:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+    "claude-3-7-sonnet-20250219": "arn:aws:bedrock:us-west-2:243706635424:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
     "claude-3-5-sonnet-20241022": "anthropic.claude-3-5-sonnet-20241022-v2:0",
     "claude-3-5-sonnet-20240620": "anthropic.claude-3-5-sonnet-20240620-v1:0",
     "claude-3-haiku-20240307": "anthropic.claude-3-haiku-20240307-v1:0",
@@ -48,7 +51,7 @@ PLANNER_MODEL_CHOICES_MAPPING = {
     "claude-3-5-sonnet-20241022": "claude-3-5-sonnet-20241022",
     "claude-3-7-sonnet-20250219": "claude-3-7-sonnet-20250219",
     "gpt-4o": "gpt-4o",
-    "gpt-4o-mini": "gpt-4o-mini", 
+    "gpt-4o-mini": "gpt-4o-mini",
     "qwen2-vl-max": "qwen2-vl-max",
     "qwen2-vl-2b (local)": "qwen2-vl-2b-instruct",
     "qwen2-vl-7b (local)": "qwen2-vl-7b-instruct",
@@ -76,7 +79,7 @@ def sampling_loop_sync(
     selected_screen: int = 0,
     showui_max_pixels: int = 1344,
     showui_awq_4bit: bool = False,
-    ui_tars_url: str = ""
+    ui_tars_url: str = "",
 ):
     """
     Synchronous agentic sampling loop for the assistant/tool interaction of computer use.
@@ -85,39 +88,42 @@ def sampling_loop_sync(
     # ---------------------------
     # Initialize Planner
     # ---------------------------
-    
+
     if planner_model in PLANNER_MODEL_CHOICES_MAPPING:
         planner_model = PLANNER_MODEL_CHOICES_MAPPING[planner_model]
     else:
         raise ValueError(f"Planner Model {planner_model} not supported")
-    
-    if planner_model == "claude-3-5-sonnet-20241022" or planner_model == "claude-3-7-sonnet-20250219":
-        
+
+    if (
+        planner_model == "claude-3-5-sonnet-20241022"
+        or planner_model == "claude-3-7-sonnet-20250219"
+    ):
+
         from computer_use_demo.gui_agent.planner.anthropic_agent import AnthropicActor
         from computer_use_demo.executor.anthropic_executor import AnthropicExecutor
-        
+
         # Register Actor and Executor
         actor = AnthropicActor(
-            model=planner_model, 
-            provider=actor_provider, 
-            system_prompt_suffix=system_prompt_suffix, 
-            api_key=api_key, 
+            model=planner_model,
+            provider=actor_provider,
+            system_prompt_suffix=system_prompt_suffix,
+            api_key=api_key,
             api_response_callback=api_response_callback,
             max_tokens=max_tokens,
             only_n_most_recent_images=only_n_most_recent_images,
-            selected_screen=selected_screen
+            selected_screen=selected_screen,
         )
 
         executor = AnthropicExecutor(
             output_callback=output_callback,
             tool_output_callback=tool_output_callback,
-            selected_screen=selected_screen
+            selected_screen=selected_screen,
         )
 
         loop_mode = "unified"
 
     elif planner_model in ["gpt-4o", "gpt-4o-mini", "qwen2-vl-max"]:
-        
+
         from computer_use_demo.gui_agent.planner.api_vlm_planner import APIVLMPlanner
 
         planner = APIVLMPlanner(
@@ -132,14 +138,20 @@ def sampling_loop_sync(
         loop_mode = "planner + actor"
 
     elif planner_model in ["qwen2-vl-2b-instruct", "qwen2-vl-7b-instruct"]:
-        
+
         import torch
-        from computer_use_demo.gui_agent.planner.local_vlm_planner import LocalVLMPlanner
-        if torch.cuda.is_available(): device = torch.device("cuda")
-        elif torch.backends.mps.is_available(): device = torch.device("mps")
-        else: device = torch.device("cpu") # support: 'cpu', 'mps', 'cuda'
+        from computer_use_demo.gui_agent.planner.local_vlm_planner import (
+            LocalVLMPlanner,
+        )
+
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            device = torch.device("mps")
+        else:
+            device = torch.device("cpu")  # support: 'cpu', 'mps', 'cuda'
         logger.info(f"Planner model {planner_model} inited on device: {device}.")
-        
+
         planner = LocalVLMPlanner(
             model=planner_model,
             provider=planner_provider,
@@ -148,10 +160,10 @@ def sampling_loop_sync(
             api_response_callback=api_response_callback,
             selected_screen=selected_screen,
             output_callback=output_callback,
-            device=device
+            device=device,
         )
         loop_mode = "planner + actor"
-        
+
     elif "ssh" in planner_model:
         planner = APIVLMPlanner(
             model=planner_model,
@@ -166,74 +178,80 @@ def sampling_loop_sync(
     else:
         logger.error(f"Planner Model {planner_model} not supported")
         raise ValueError(f"Planner Model {planner_model} not supported")
-        
 
     # ---------------------------
     # Initialize Actor, Executor
     # ---------------------------
     if actor_model == "ShowUI":
-        
+
         from computer_use_demo.executor.showui_executor import ShowUIExecutor
         from computer_use_demo.gui_agent.actor.showui_agent import ShowUIActor
+
         if showui_awq_4bit:
             showui_model_path = "./showui-2b-awq-4bit/"
         else:
             showui_model_path = "./showui-2b/"
-            
+
         import torch
-        if torch.cuda.is_available(): device = torch.device("cuda")
-        elif torch.backends.mps.is_available(): device = torch.device("mps")
-        else: device = torch.device("cpu") # support: 'cpu', 'mps', 'cuda'
+
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            device = torch.device("mps")
+        else:
+            device = torch.device("cpu")  # support: 'cpu', 'mps', 'cuda'
         logger.info(f"Actor model {actor_model} inited on device: {device}.")
 
         actor = ShowUIActor(
-            model_path=showui_model_path,  
-            device=device,  
-            split='desktop',  # 'desktop' or 'phone'
+            model_path=showui_model_path,
+            device=device,
+            split="desktop",  # 'desktop' or 'phone'
             selected_screen=selected_screen,
             output_callback=output_callback,
             max_pixels=showui_max_pixels,
-            awq_4bit=showui_awq_4bit
+            awq_4bit=showui_awq_4bit,
         )
-        
+
         executor = ShowUIExecutor(
             output_callback=output_callback,
             tool_output_callback=tool_output_callback,
-            selected_screen=selected_screen
+            selected_screen=selected_screen,
         )
 
     elif actor_model == "UI-TARS":
-        
+
         from computer_use_demo.executor.showui_executor import ShowUIExecutor
         from computer_use_demo.gui_agent.actor.uitars_agent import UITARS_Actor
-        
+
         actor = UITARS_Actor(
             ui_tars_url=ui_tars_url,
             output_callback=output_callback,
-            selected_screen=selected_screen
+            selected_screen=selected_screen,
         )
-        
+
         executor = ShowUIExecutor(
             output_callback=output_callback,
             tool_output_callback=tool_output_callback,
-            selected_screen=selected_screen
+            selected_screen=selected_screen,
         )
-        
-    elif actor_model == "claude-3-5-sonnet-20241022" or actor_model == "claude-3-7-sonnet-20250219":
+
+    elif (
+        actor_model == "claude-3-5-sonnet-20241022"
+        or actor_model == "claude-3-7-sonnet-20250219"
+    ):
         loop_mode = "unified"
 
     else:
         raise ValueError(f"Actor Model {actor_model} not supported")
 
-
     tool_result_content = None
     showui_loop_count = 0
-    
+
     logger.info(f"Start the message loop. User messages: {messages}")
 
     if loop_mode == "unified":
         # ------------------------------
-        # Unified loop: 
+        # Unified loop:
         # 1) repeatedly call actor -> executor -> check tool_result -> maybe end
         # ------------------------------
         while True:
@@ -249,16 +267,13 @@ def sampling_loop_sync(
                 return messages
 
             # If there is more tool content, treat that as user input
-            messages.append({
-                "content": tool_result_content,
-                "role": "user"
-            })
+            messages.append({"content": tool_result_content, "role": "user"})
 
     elif loop_mode == "planner + actor":
         # ------------------------------------------------------
-        # Planner + actor loop: 
+        # Planner + actor loop:
         # 1) planner => get next_action
-        # 2) If no next_action -> end 
+        # 2) If no next_action -> end
         # 3) Otherwise actor => executor
         # 4) repeat
         # ------------------------------------------------------
@@ -274,7 +289,9 @@ def sampling_loop_sync(
 
             # Step 3: Check if there are no further actions
             if not next_action or next_action in ("None", ""):
-                final_sc, final_sc_path = get_screenshot(selected_screen=selected_screen)
+                final_sc, final_sc_path = get_screenshot(
+                    selected_screen=selected_screen
+                )
                 final_image_b64 = encode_image(str(final_sc_path))
 
                 output_callback(
@@ -282,7 +299,7 @@ def sampling_loop_sync(
                         f"No more actions from {colorful_text_vlm}. End of task. Final State:\n"
                         f'<img src="data:image/png;base64,{final_image_b64}">'
                     ),
-                    sender="bot"
+                    sender="bot",
                 )
                 yield None
                 break
@@ -290,7 +307,7 @@ def sampling_loop_sync(
             # Step 4: Output an action message
             output_callback(
                 f"{colorful_text_vlm} sending action to {colorful_text_showui}:\n{next_action}",
-                sender="bot"
+                sender="bot",
             )
 
             # Step 5: Actor response
@@ -303,18 +320,17 @@ def sampling_loop_sync(
                 yield message
 
             # Step 7: Update conversation with embedding history of plan and actions
-            messages.append({
-                "role": "user",
-                "content": [
-                    "History plan:" + str(json.loads(vlm_response)),
-                    "History actions:" + str(actor_response["content"])
-                ]
-            })
-
-            logger.info(
-                f"End of loop. Total cost: $USD{planner.total_cost:.5f}"
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        "History plan:" + str(json.loads(vlm_response)),
+                        "History actions:" + str(actor_response["content"]),
+                    ],
+                }
             )
 
+            logger.info(f"End of loop. Total cost: $USD{planner.total_cost:.5f}")
 
             # Increment loop counter
             showui_loop_count += 1
